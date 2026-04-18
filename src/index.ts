@@ -1,56 +1,90 @@
 import { randomUUID } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { createServer as createHttpServer } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { config } from "./config";
-import { createServer } from "./server";
+import { createServer as createMcpServer } from "./server";
 
-// Map sessionId → transport. Streamable HTTP supports session-per-client so
-// multiple conversations can share one server process.
+// Map MCP session ID → transport. Streamable HTTP allows one server process to
+// host many concurrent conversations.
 const transports = new Map<string, StreamableHTTPServerTransport>();
 
-function corsHeaders(origin: string | null): Record<string, string> {
+function setCors(res: ServerResponse, origin: string | undefined): void {
   const allow = origin && config.allowedOrigins.includes(origin) ? origin : "";
-  return {
-    "Access-Control-Allow-Origin": allow,
-    "Access-Control-Allow-Headers":
-      "Content-Type, Authorization, Mcp-Session-Id",
-    "Access-Control-Allow-Methods": "POST, GET, OPTIONS, DELETE",
-    "Access-Control-Expose-Headers": "Mcp-Session-Id",
-  };
+  res.setHeader("Access-Control-Allow-Origin", allow);
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, Mcp-Session-Id, mcp-protocol-version"
+  );
+  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
+  res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
 }
 
-function unauthorized(origin: string | null): Response {
-  return new Response("Unauthorized", {
-    status: 401,
-    headers: corsHeaders(origin),
-  });
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    chunks.push(chunk as Buffer);
+  }
+  if (chunks.length === 0) {
+    return undefined;
+  }
+  const raw = Buffer.concat(chunks).toString("utf8");
+  if (!raw.trim()) {
+    return undefined;
+  }
+  return JSON.parse(raw);
 }
 
-async function handleMcp(req: Request): Promise<Response> {
-  const origin = req.headers.get("origin");
+async function handleMcp(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const origin = req.headers.origin;
+  setCors(res, origin);
 
   if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders(origin) });
+    res.statusCode = 204;
+    res.end();
+    return;
   }
 
-  // Caller auth: shared secret between the WhatsApp bot and this server.
-  // This is *not* end-user auth; guest identity is established per-request
-  // via the phone number passed to place_guest_order.
-  const auth = req.headers.get("authorization");
+  // Caller auth: shared secret. Not end-user auth — guest identity is
+  // established per-request via the phone passed to place_guest_order.
+  const auth = req.headers.authorization;
   if (auth !== `Bearer ${config.clientSecret}`) {
-    return unauthorized(origin);
+    res.statusCode = 401;
+    res.end("Unauthorized");
+    return;
   }
 
-  const sessionId = req.headers.get("mcp-session-id") ?? undefined;
+  const sessionHeader = req.headers["mcp-session-id"];
+  const sessionId =
+    typeof sessionHeader === "string" ? sessionHeader : undefined;
   let transport = sessionId ? transports.get(sessionId) : undefined;
+
+  // Parse the body once. The transport accepts parsedBody as a 3rd arg so it
+  // does not try to re-read the stream.
+  let parsedBody: unknown;
+  try {
+    parsedBody = await readJsonBody(req);
+  } catch (err) {
+    res.statusCode = 400;
+    res.end(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        error: { code: -32_700, message: "Parse error" },
+      })
+    );
+    return;
+  }
 
   if (!transport) {
     if (req.method !== "POST") {
-      return new Response("Session not found", {
-        status: 404,
-        headers: corsHeaders(origin),
-      });
+      res.statusCode = 404;
+      res.end("Session not found");
+      return;
     }
-    // New session — boot a transport and hook it into an McpServer instance.
+    // Fresh session — spin up a new transport + McpServer pair.
     const newSessionId = randomUUID();
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => newSessionId,
@@ -63,90 +97,60 @@ async function handleMcp(req: Request): Promise<Response> {
         transports.delete(transport.sessionId);
       }
     };
-    const server = createServer();
-    await server.connect(transport);
+    const mcp = createMcpServer();
+    await mcp.connect(transport);
   }
 
-  // Streamable HTTP transport exposes a Node-style `handleRequest`. We adapt
-  // Bun's Request/Response to it via a small shim using Fetch-API streams.
-  const body = await req.arrayBuffer();
-  const nodeReq: any = {
-    method: req.method,
-    url: new URL(req.url).pathname + new URL(req.url).search,
-    headers: Object.fromEntries(req.headers.entries()),
-    // Feed parsed body so the transport's JSON reader gets it.
-    on(event: string, handler: (chunk?: unknown) => void) {
-      if (event === "data" && body.byteLength > 0) {
-        handler(new Uint8Array(body));
-      }
-      if (event === "end") {
-        handler();
-      }
-    },
-  };
-
-  return await new Promise<Response>((resolve) => {
-    let statusCode = 200;
-    const resHeaders: Record<string, string> = { ...corsHeaders(origin) };
-    const chunks: Uint8Array[] = [];
-    const nodeRes: any = {
-      setHeader(name: string, value: string) {
-        resHeaders[name] = value;
-      },
-      writeHead(code: number, headers?: Record<string, string>) {
-        statusCode = code;
-        if (headers) {
-          Object.assign(resHeaders, headers);
-        }
-      },
-      write(chunk: Uint8Array | string) {
-        chunks.push(
-          typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk
-        );
-      },
-      end(chunk?: Uint8Array | string) {
-        if (chunk) {
-          chunks.push(
-            typeof chunk === "string" ? new TextEncoder().encode(chunk) : chunk
-          );
-        }
-        const buf = new Uint8Array(
-          chunks.reduce((n, c) => n + c.byteLength, 0)
-        );
-        let o = 0;
-        for (const c of chunks) {
-          buf.set(c, o);
-          o += c.byteLength;
-        }
-        resolve(new Response(buf, { status: statusCode, headers: resHeaders }));
-      },
-    };
-
-    transport!.handleRequest(
-      nodeReq,
-      nodeRes,
-      body.byteLength > 0
-        ? JSON.parse(new TextDecoder().decode(body))
-        : undefined
-    );
-  });
+  try {
+    await transport.handleRequest(req, res, parsedBody);
+  } catch (err) {
+    console.error("MCP handleRequest failed:", err);
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          error: {
+            code: -32_603,
+            message: "Internal error",
+            data: err instanceof Error ? err.message : String(err),
+          },
+        })
+      );
+    }
+  }
 }
 
-Bun.serve({
-  port: config.port,
-  async fetch(req) {
-    const url = new URL(req.url);
+const httpServer = createHttpServer(async (req, res) => {
+  try {
+    const url = new URL(
+      req.url ?? "/",
+      `http://${req.headers.host ?? "localhost"}`
+    );
 
     if (url.pathname === "/health") {
-      return new Response("ok", { status: 200 });
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end("ok");
+      return;
     }
 
     if (url.pathname === "/mcp") {
-      return handleMcp(req);
+      await handleMcp(req, res);
+      return;
     }
 
-    return new Response("Not found", { status: 404 });
-  },
+    res.statusCode = 404;
+    res.end("Not found");
+  } catch (err) {
+    console.error("Unhandled request error:", err);
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.end("Internal Server Error");
+    }
+  }
 });
 
-console.log(`boxconv-mcp listening on :${config.port}`);
+httpServer.listen(config.port, () => {
+  console.log(`boxconv-mcp listening on :${config.port}`);
+});
