@@ -1,0 +1,23 @@
+{
+  "name": "boxconv-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server exposing BoxConv guest ordering (product search, cart, checkout) for WhatsApp and other AI clients.",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "convex": "^1.17.0",
+    "google-libphonenumber": "^3.2.40",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.14",
+    "@types/google-libphonenumber": "^7.4.30",
+    "typescript": "^5.7.2"
+  }
+}
