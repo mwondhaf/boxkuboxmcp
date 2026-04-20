@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { api, convex } from "../convex";
+import { sanitize } from "../sanitize";
 
 export function registerSearchTools(server: McpServer) {
   server.tool(
@@ -16,8 +17,6 @@ export function registerSearchTools(server: McpServer) {
       limit: z.number().int().positive().max(50).default(20),
     },
     async ({ limit }) => {
-      // NOTE: backend does not yet filter by lat/lng coverage — callers should
-      // pair each store with get_delivery_quote to confirm coverage.
       const stores = await convex.query(
         api.organizations.listActiveWithStatus,
         {}
@@ -25,10 +24,7 @@ export function registerSearchTools(server: McpServer) {
       const top = stores.slice(0, limit);
       return {
         content: [
-          {
-            type: "text",
-            text: JSON.stringify(top, null, 2),
-          },
+          { type: "text", text: JSON.stringify(sanitize(top), null, 2) },
         ],
       };
     }
@@ -46,7 +42,9 @@ export function registerSearchTools(server: McpServer) {
     async (args) => {
       const results = await convex.action(api.typesense.searchProducts, args);
       return {
-        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+        content: [
+          { type: "text", text: JSON.stringify(sanitize(results), null, 2) },
+        ],
       };
     }
   );
@@ -61,7 +59,9 @@ export function registerSearchTools(server: McpServer) {
     async (args) => {
       const results = await convex.action(api.typesense.searchStores, args);
       return {
-        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+        content: [
+          { type: "text", text: JSON.stringify(sanitize(results), null, 2) },
+        ],
       };
     }
   );
@@ -74,10 +74,12 @@ export function registerSearchTools(server: McpServer) {
     },
     async ({ organizationId }) => {
       const store = await convex.query(api.organizations.getStoreDetails, {
-        organizationId,
+        id: organizationId,
       });
       return {
-        content: [{ type: "text", text: JSON.stringify(store, null, 2) }],
+        content: [
+          { type: "text", text: JSON.stringify(sanitize(store), null, 2) },
+        ],
       };
     }
   );

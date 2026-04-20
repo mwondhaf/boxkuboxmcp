@@ -36,7 +36,7 @@ export function registerCartTools(server: McpServer) {
       cartId: z.string(),
     },
     async ({ cartId }) => {
-      const cart = await convex.query(api.carts.get, { cartId });
+      const cart = await convex.query(api.carts.get, { id: cartId });
       return {
         content: [{ type: "text", text: JSON.stringify(cart, null, 2) }],
       };
@@ -53,7 +53,7 @@ export function registerCartTools(server: McpServer) {
     },
     async (args) => {
       await convex.mutation(api.carts.addItem, args);
-      const cart = await convex.query(api.carts.get, { cartId: args.cartId });
+      const cart = await convex.query(api.carts.get, { id: args.cartId });
       return {
         content: [{ type: "text", text: JSON.stringify(cart, null, 2) }],
       };
@@ -70,7 +70,7 @@ export function registerCartTools(server: McpServer) {
     },
     async (args) => {
       await convex.mutation(api.carts.updateItemQuantity, args);
-      const cart = await convex.query(api.carts.get, { cartId: args.cartId });
+      const cart = await convex.query(api.carts.get, { id: args.cartId });
       return {
         content: [{ type: "text", text: JSON.stringify(cart, null, 2) }],
       };
@@ -86,7 +86,7 @@ export function registerCartTools(server: McpServer) {
     },
     async (args) => {
       await convex.mutation(api.carts.removeItem, args);
-      const cart = await convex.query(api.carts.get, { cartId: args.cartId });
+      const cart = await convex.query(api.carts.get, { id: args.cartId });
       return {
         content: [{ type: "text", text: JSON.stringify(cart, null, 2) }],
       };

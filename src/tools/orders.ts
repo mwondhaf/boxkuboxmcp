@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { api, convex } from "../convex";
 import { InvalidPhoneError, normalizeUgMobile } from "../phone";
+import { sanitizeOrder } from "../sanitize";
 
 function phoneError(err: unknown): never {
   if (err instanceof InvalidPhoneError) {
@@ -145,8 +146,17 @@ export function registerOrderTools(server: McpServer) {
           isError: true,
         };
       }
+
+      // Mask rider/partner phones; keep the customer's own phones (guestPhone
+      // and the delivery-location phone — they already know these).
+      const masked = sanitizeOrder(order) as typeof order;
+      if (order.deliveryLocation && masked.deliveryLocation) {
+        (masked.deliveryLocation as { phone?: string }).phone =
+          order.deliveryLocation.phone;
+      }
+
       return {
-        content: [{ type: "text", text: JSON.stringify(order, null, 2) }],
+        content: [{ type: "text", text: JSON.stringify(masked, null, 2) }],
       };
     }
   );
