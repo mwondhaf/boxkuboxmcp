@@ -4,3 +4,8 @@ bun.lockb
 .env.local
 *.log
 dist/
+
+# Convex artifacts — this package does not host Convex functions. If you ever
+# see a `convex/` dir appear here, a `npx convex *` command was run from the
+# wrong working directory. Delete it; the real project lives in the repo root.
+convex/
