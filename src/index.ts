@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createHttpServer } from "node:http";
+import type { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { config } from "./config";
 import { createServer as createMcpServer } from "./server";
@@ -8,6 +9,11 @@ import { createServer as createMcpServer } from "./server";
 // Map MCP session ID → transport. Streamable HTTP allows one server process to
 // host many concurrent conversations.
 const transports = new Map<string, StreamableHTTPServerTransport>();
+
+// Separate session store for the legacy SSE transport (used by n8n's MCP Client
+// node and other older clients). Kept in a distinct map because the transport
+// type is different and they're indexed by transport.sessionId.
+const sseTransports = new Map<string, SSEServerTransport>();
 
 function setCors(res: ServerResponse, origin: string | undefined): void {
   const allow = origin && config.allowedOrigins.includes(origin) ? origin : "";
@@ -121,6 +127,86 @@ async function handleMcp(
   }
 }
 
+// =============================================================================
+// Legacy SSE transport — used by n8n's MCP Client node and other older clients.
+// Two endpoints:
+//   GET  /sse            → opens the event stream, emits "endpoint" event
+//                           pointing at /message?sessionId=...
+//   POST /message        → client sends JSON-RPC requests here, server pipes
+//                           responses back over the matching SSE stream.
+// =============================================================================
+
+async function handleSseOpen(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const origin = req.headers.origin;
+  setCors(res, origin);
+
+  const auth = req.headers.authorization;
+  if (auth !== `Bearer ${config.clientSecret}`) {
+    res.statusCode = 401;
+    res.end("Unauthorized");
+    return;
+  }
+
+  const transport = new SSEServerTransport("/message", res);
+  sseTransports.set(transport.sessionId, transport);
+
+  transport.onclose = () => {
+    sseTransports.delete(transport.sessionId);
+  };
+
+  const mcp = createMcpServer();
+  await mcp.connect(transport);
+}
+
+async function handleSseMessage(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL
+): Promise<void> {
+  const origin = req.headers.origin;
+  setCors(res, origin);
+
+  if (req.method === "OPTIONS") {
+    res.statusCode = 204;
+    res.end();
+    return;
+  }
+
+  const auth = req.headers.authorization;
+  if (auth !== `Bearer ${config.clientSecret}`) {
+    res.statusCode = 401;
+    res.end("Unauthorized");
+    return;
+  }
+
+  const sessionId = url.searchParams.get("sessionId");
+  if (!sessionId) {
+    res.statusCode = 400;
+    res.end("Missing sessionId");
+    return;
+  }
+
+  const transport = sseTransports.get(sessionId);
+  if (!transport) {
+    res.statusCode = 404;
+    res.end("Session not found");
+    return;
+  }
+
+  try {
+    await transport.handlePostMessage(req, res);
+  } catch (err) {
+    console.error("SSE handlePostMessage failed:", err);
+    if (!res.headersSent) {
+      res.statusCode = 500;
+      res.end("Internal error");
+    }
+  }
+}
+
 const httpServer = createHttpServer(async (req, res) => {
   try {
     const url = new URL(
@@ -137,6 +223,16 @@ const httpServer = createHttpServer(async (req, res) => {
 
     if (url.pathname === "/mcp") {
       await handleMcp(req, res);
+      return;
+    }
+
+    if (url.pathname === "/sse" && req.method === "GET") {
+      await handleSseOpen(req, res);
+      return;
+    }
+
+    if (url.pathname === "/message") {
+      await handleSseMessage(req, res, url);
       return;
     }
 
