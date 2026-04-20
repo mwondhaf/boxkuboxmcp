@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createServer as createHttpServer } from "node:http";
-import type { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+// biome-ignore lint/style/useImportType: SSEServerTransport is instantiated with `new` below
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { config } from "./config";
 import { createServer as createMcpServer } from "./server";
