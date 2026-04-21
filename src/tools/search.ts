@@ -83,4 +83,22 @@ export function registerSearchTools(server: McpServer) {
       };
     }
   );
+
+  server.tool(
+    "get_store_timings",
+    "Get the operating hours and current open/closed status for a store. Returns the full weekly schedule, whether the store is open right now, and what time it opens/closes today.",
+    {
+      organizationId: z.string().describe("Convex Id<'organizations'>"),
+    },
+    async ({ organizationId }) => {
+      const timings = await convex.query(api.organizations.getStoreTimings, {
+        id: organizationId,
+      });
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(sanitize(timings), null, 2) },
+        ],
+      };
+    }
+  );
 }
