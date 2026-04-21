@@ -17,10 +17,16 @@ export function registerSearchTools(server: McpServer) {
       limit: z.number().int().positive().max(50).default(20),
     },
     async ({ lat, lng, limit }) => {
-      const stores = await convex.query(
+      type StoreRow = {
+        _id: string;
+        slug: string;
+        distanceMeters?: number;
+        [key: string]: unknown;
+      };
+      const stores = (await convex.query(
         api.organizations.listActiveWithStatus,
         { customerLat: lat, customerLng: lng }
-      );
+      )) as StoreRow[];
       // Mirror the 15km hard limit enforced by getGuestDeliveryQuote
       const MAX_DELIVERY_KM = 15;
       const inZone = stores.filter(
