@@ -16,12 +16,22 @@ export function registerSearchTools(server: McpServer) {
         .describe("Customer longitude (from shared WhatsApp location)"),
       limit: z.number().int().positive().max(50).default(20),
     },
-    async ({ limit }) => {
+    async ({ lat, lng, limit }) => {
       const stores = await convex.query(
         api.organizations.listActiveWithStatus,
-        {}
+        { customerLat: lat, customerLng: lng }
       );
-      const top = stores.slice(0, limit);
+      // Mirror the 15km hard limit enforced by getGuestDeliveryQuote
+      const MAX_DELIVERY_KM = 15;
+      const inZone = stores.filter(
+        (s) =>
+          s.distanceMeters !== undefined &&
+          s.distanceMeters <= MAX_DELIVERY_KM * 1000
+      );
+      const top = inZone.slice(0, limit).map(({ _id, ...store }) => ({
+        identifier: store.slug,
+        ...store,
+      }));
       return {
         content: [
           { type: "text", text: JSON.stringify(sanitize(top), null, 2) },
