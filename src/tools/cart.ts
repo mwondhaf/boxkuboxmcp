@@ -35,7 +35,11 @@ export function registerCartTools(server: McpServer) {
         content: [
           {
             type: "text",
-            text: JSON.stringify({ cartId, sessionId }, null, 2),
+            text: JSON.stringify(
+              { cartId, sessionId, storeSlug: store.slug },
+              null,
+              2
+            ),
           },
         ],
       };
