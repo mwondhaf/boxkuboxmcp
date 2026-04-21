@@ -8,14 +8,27 @@ export function registerCartTools(server: McpServer) {
     "create_guest_cart",
     "Create a new guest shopping cart for a specific store. Returns a sessionId that must be passed to every subsequent cart/order call during this conversation.",
     {
-      organizationId: z.string().describe("Convex Id<'organizations'>"),
+      identifier: z
+        .string()
+        .describe(
+          "Store slug (e.g. 'madam-gs-house-of-party') or Convex document ID"
+        ),
       currencyCode: z.string().optional().default("UGX"),
     },
-    async ({ organizationId, currencyCode }) => {
+    async ({ identifier, currencyCode }) => {
+      const store = await convex.query(api.organizations.getStoreTimings, {
+        identifier,
+      });
+      if (!store) {
+        return {
+          content: [{ type: "text", text: `Store not found: ${identifier}` }],
+          isError: true,
+        };
+      }
       const sessionId = newSessionId();
       const cartId = await convex.mutation(api.carts.create, {
         sessionId,
-        organizationId,
+        organizationId: store._id,
         currencyCode,
       });
       return {

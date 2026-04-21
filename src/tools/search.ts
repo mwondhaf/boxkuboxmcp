@@ -70,11 +70,13 @@ export function registerSearchTools(server: McpServer) {
     "get_store",
     "Get full details for a single store including delivery zones, categories, and pricing rules.",
     {
-      organizationId: z.string().describe("Convex Id<'organizations'>"),
+      identifier: z
+        .string()
+        .describe("Store slug (e.g. 'hamma-supplies') or Convex document ID"),
     },
-    async ({ organizationId }) => {
+    async ({ identifier }) => {
       const store = await convex.query(api.organizations.getStoreDetails, {
-        id: organizationId,
+        identifier,
       });
       return {
         content: [
@@ -86,32 +88,15 @@ export function registerSearchTools(server: McpServer) {
 
   server.tool(
     "get_store_timings",
-    "Get the operating hours and current open/closed status for a store. Returns the full weekly schedule, whether the store is open right now, and what time it opens/closes today. Pass either organizationId (Convex document ID) or slug (e.g. 'j-j-traders').",
+    "Get the operating hours and current open/closed status for a store. Returns the full weekly schedule, whether the store is open right now, and what time it opens/closes today.",
     {
-      organizationId: z
+      identifier: z
         .string()
-        .optional()
-        .describe("Convex Id<'organizations'>"),
-      slug: z
-        .string()
-        .optional()
-        .describe("Store URL slug, e.g. 'j-j-traders'"),
+        .describe("Store slug (e.g. 'j-j-traders') or Convex document ID"),
     },
-    async ({ organizationId, slug }) => {
-      if (!(organizationId || slug)) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: "Provide either organizationId or slug.",
-            },
-          ],
-          isError: true,
-        };
-      }
+    async ({ identifier }) => {
       const timings = await convex.query(api.organizations.getStoreTimings, {
-        id: organizationId,
-        slug,
+        identifier,
       });
       return {
         content: [

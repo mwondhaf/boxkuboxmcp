@@ -16,17 +16,33 @@ export function registerOrderTools(server: McpServer) {
     "get_delivery_quote",
     "Get a delivery fare quote for a specific store + customer location. Call before placing the order so the customer knows the total.",
     {
-      organizationId: z.string(),
+      identifier: z
+        .string()
+        .describe(
+          "Store slug (e.g. 'madam-gs-house-of-party') or Convex document ID"
+        ),
       lat: z.number().describe("Customer latitude"),
       lng: z.number().describe("Customer longitude"),
       orderSubtotal: z.number().int().min(0),
       isExpress: z.boolean().optional(),
     },
-    async (args) => {
-      const quote = await convex.query(
-        api.guestOrders.getGuestDeliveryQuote,
-        args
-      );
+    async ({ identifier, lat, lng, orderSubtotal, isExpress }) => {
+      const store = await convex.query(api.organizations.getStoreTimings, {
+        identifier,
+      });
+      if (!store) {
+        return {
+          content: [{ type: "text", text: `Store not found: ${identifier}` }],
+          isError: true,
+        };
+      }
+      const quote = await convex.query(api.guestOrders.getGuestDeliveryQuote, {
+        organizationId: store._id,
+        lat,
+        lng,
+        orderSubtotal,
+        isExpress,
+      });
       return {
         content: [{ type: "text", text: JSON.stringify(quote, null, 2) }],
       };
