@@ -91,97 +91,355 @@ All store-targeting parameters across every tool use **Convex document IDs** (e.
 | `list_nearby_stores` | `storeId` | `create_guest_cart`, `get_store`, `get_store_timings`, `get_delivery_quote` |
 | `search_stores` | `_id` | same as above |
 | `search_products` | `variantId` | `add_to_cart` |
-| `search_products` | `organizationId` | `create_guest_cart` (if product found first) |
+| `search_products` | `organizationId` | `create_guest_cart` (if product found before store) |
 
 ---
 
 ## Tool reference
 
-### Discovery
+### `list_nearby_stores`
 
-#### `list_nearby_stores`
-List active stores within 15 km of the customer's location. Returns `storeId` (Convex document ID) for each store — pass it directly to cart/quote tools.
+List active stores within 15 km of the customer's location. Each result includes `storeId` — pass it to cart/quote tools.
+
+**Input:**
 ```json
 { "lat": 0.3476, "lng": 32.5825, "limit": 20 }
 ```
-Key response fields per store: `storeId`, `name`, `slug`, `isOpen`, `distanceMeters`, `estimatedMinMin`, `estimatedMaxMin`.
 
-#### `search_products`
-Typesense-backed product search with typo tolerance. Returns `variantId` and `organizationId` per result.
+**Output:** array of stores sorted by open-first then nearest-first.
 ```json
-{ "query": "pizza", "limit": 10, "customerLat": 0.3476, "customerLng": 32.5825 }
+[
+  {
+    "storeId": "n97bctqtnwn501xcvvqc0g1prn80g382",
+    "name": "Farm Fresh",
+    "slug": "farm-fresh-seguku",
+    "logo": "https://cdn.boxkubox.com/logos/farm-fresh.jpg",
+    "coverPhotoUrl": "https://cdn.boxkubox.com/covers/farm-fresh.jpg",
+    "cityOrDistrict": "Kampala",
+    "town": "Seguku",
+    "street": "Entebbe Road",
+    "lat": 0.2601,
+    "lng": 32.5765,
+    "distanceMeters": 1840,
+    "estimatedMinMin": 18,
+    "estimatedMaxMin": 27,
+    "category": { "_id": "cat123", "name": "Grocery", "slug": "grocery" },
+    "isOpen": true,
+    "opensAt": "08:00",
+    "closesAt": "22:00",
+    "isBusy": false,
+    "phone": "0200923088",
+    "minimumOrderAmount": 5000
+  }
+]
 ```
 
-#### `search_stores`
-Typesense-backed store search by name. Returns `_id` (use as `storeId`) per result.
+> `phone` is always masked to the BoxKuBox support number. `geohash` is stripped.
+
+---
+
+### `search_stores`
+
+Typesense-backed store search by name. `_id` is the `storeId` to use in downstream tools.
+
+**Input:**
 ```json
-{ "query": "Cafe Javas", "limit": 10 }
+{ "query": "Farm Fresh", "limit": 10 }
 ```
 
-#### `get_store`
-Full store details including delivery zones, categories, and pricing rules.
+**Output:**
+```json
+[
+  {
+    "_id": "n97bctqtnwn501xcvvqc0g1prn80g382",
+    "name": "Farm Fresh",
+    "slug": "farm-fresh-seguku",
+    "logo": "https://cdn.boxkubox.com/logos/farm-fresh.jpg",
+    "cityOrDistrict": "Kampala",
+    "isOpen": true
+  }
+]
+```
+
+---
+
+### `search_products`
+
+Typesense-backed product search with typo tolerance. `variantId` is what you pass to `add_to_cart`; `organizationId` is the store's `storeId`.
+
+**Input:**
+```json
+{ "query": "tilapia", "limit": 10, "customerLat": 0.3476, "customerLng": 32.5825 }
+```
+
+**Output:**
+```json
+[
+  {
+    "variantId": "m29abc123",
+    "productId": "p81xyz456",
+    "name": "Tilapia Fillet",
+    "imageUrl": "https://cdn.boxkubox.com/products/tilapia.jpg",
+    "unit": "500g",
+    "price": 12000,
+    "salePrice": 10000,
+    "currency": "UGX",
+    "inStock": true,
+    "organizationId": "n97bctqtnwn501xcvvqc0g1prn80g382",
+    "organizationName": "Farm Fresh",
+    "organizationLogo": "https://cdn.boxkubox.com/logos/farm-fresh.jpg",
+    "estimatedMinMin": 18,
+    "estimatedMaxMin": 27
+  }
+]
+```
+
+---
+
+### `get_store`
+
+Full store details including operating status, delivery zones, and pricing rules.
+
+**Input:**
 ```json
 { "storeId": "n97bctqtnwn501xcvvqc0g1prn80g382" }
 ```
 
-#### `get_store_timings`
-Current open/closed status and full weekly schedule for a store.
+**Output:**
+```json
+{
+  "_id": "n97bctqtnwn501xcvvqc0g1prn80g382",
+  "name": "Farm Fresh",
+  "slug": "farm-fresh-seguku",
+  "logoUrl": "https://cdn.boxkubox.com/logos/farm-fresh.jpg",
+  "coverPhotoUrl": "https://cdn.boxkubox.com/covers/farm-fresh.jpg",
+  "cityOrDistrict": "Kampala",
+  "town": "Seguku",
+  "street": "Entebbe Road",
+  "lat": 0.2601,
+  "lng": 32.5765,
+  "timezone": "Africa/Kampala",
+  "isActive": true,
+  "isBusy": false,
+  "isOpen": true,
+  "opensAt": "08:00",
+  "closesAt": "22:00",
+  "minimumOrderAmount": 5000,
+  "selfPickupEnabled": false,
+  "businessHours": {
+    "monday":    { "open": "08:00", "close": "22:00", "isClosed": false },
+    "tuesday":   { "open": "08:00", "close": "22:00", "isClosed": false },
+    "wednesday": { "open": "08:00", "close": "22:00", "isClosed": false },
+    "thursday":  { "open": "08:00", "close": "22:00", "isClosed": false },
+    "friday":    { "open": "08:00", "close": "22:00", "isClosed": false },
+    "saturday":  { "open": "09:00", "close": "20:00", "isClosed": false },
+    "sunday":    { "open": "00:00", "close": "00:00", "isClosed": true }
+  },
+  "category": { "_id": "cat123", "name": "Grocery", "slug": "grocery" }
+}
+```
+
+> Returns `null` if the store does not exist or `isActive` is `false`.
+
+---
+
+### `get_store_timings`
+
+Current open/closed status and full weekly schedule. Lighter than `get_store` — use this when you only need availability.
+
+**Input:**
 ```json
 { "storeId": "n97bctqtnwn501xcvvqc0g1prn80g382" }
 ```
 
-### Cart
+**Output:**
+```json
+{
+  "_id": "n97bctqtnwn501xcvvqc0g1prn80g382",
+  "name": "Farm Fresh",
+  "slug": "farm-fresh-seguku",
+  "timezone": "Africa/Kampala",
+  "isBusy": false,
+  "isOpen": true,
+  "opensAt": "08:00",
+  "closesAt": "22:00",
+  "businessHours": {
+    "monday":    { "open": "08:00", "close": "22:00", "isClosed": false },
+    "tuesday":   { "open": "08:00", "close": "22:00", "isClosed": false },
+    "wednesday": { "open": "08:00", "close": "22:00", "isClosed": false },
+    "thursday":  { "open": "08:00", "close": "22:00", "isClosed": false },
+    "friday":    { "open": "08:00", "close": "22:00", "isClosed": false },
+    "saturday":  { "open": "09:00", "close": "20:00", "isClosed": false },
+    "sunday":    { "open": "00:00", "close": "00:00", "isClosed": true }
+  }
+}
+```
 
-#### `create_guest_cart`
-Create a new cart for a specific store. Returns `{ cartId, sessionId, storeId, storeName }`. **Store both `cartId` and `sessionId` against the conversation — they are required for every subsequent cart and order call.**
+> Returns `null` if the store does not exist or `isActive` is `false`.
+
+---
+
+### `create_guest_cart`
+
+Create a new cart for a specific store. **Store `cartId` and `sessionId` against the conversation** — both are required for every subsequent cart and order call.
+
+**Input:**
 ```json
 { "storeId": "n97bctqtnwn501xcvvqc0g1prn80g382", "currencyCode": "UGX" }
 ```
 
-#### `get_cart`
+**Output:**
+```json
+{
+  "cartId": "k17def789",
+  "sessionId": "mcp_a1b2c3d4e5f6",
+  "storeId": "n97bctqtnwn501xcvvqc0g1prn80g382",
+  "storeName": "Farm Fresh"
+}
+```
+
+---
+
+### `get_cart`
+
 Fetch the current state of a cart including all line items and totals.
+
+**Input:**
 ```json
-{ "cartId": "k17..." }
+{ "cartId": "k17def789" }
 ```
 
-#### `add_to_cart`
-Add a product variant to a cart (or increment its quantity if already present). Use `variantId` from `search_products`.
+**Output:**
 ```json
-{ "cartId": "k17...", "variantId": "m29...", "quantity": 2 }
+{
+  "_id": "k17def789",
+  "sessionId": "mcp_a1b2c3d4e5f6",
+  "organizationId": "n97bctqtnwn501xcvvqc0g1prn80g382",
+  "currencyCode": "UGX",
+  "expiresAt": 1714000000000,
+  "subtotal": 20000,
+  "itemCount": 2,
+  "items": [
+    {
+      "_id": "ci001",
+      "cartId": "k17def789",
+      "variantId": "m29abc123",
+      "quantity": 2,
+      "variant": {
+        "_id": "m29abc123",
+        "sku": "FF-TIL-500",
+        "unit": "500g",
+        "isAvailable": true
+      },
+      "product": {
+        "_id": "p81xyz456",
+        "name": "Tilapia Fillet",
+        "slug": "tilapia-fillet"
+      },
+      "price": 12000,
+      "salePrice": 10000,
+      "effectivePrice": 10000,
+      "currency": "UGX",
+      "subtotal": 20000
+    }
+  ]
+}
 ```
 
-#### `update_cart_item`
-Update the quantity of an item already in the cart. Set `quantity` to `0` to remove.
+---
+
+### `add_to_cart`
+
+Add a product variant to a cart (or increment its quantity if already present). Returns the updated cart in the same shape as `get_cart`.
+
+**Input:**
 ```json
-{ "cartId": "k17...", "variantId": "m29...", "quantity": 1 }
+{ "cartId": "k17def789", "variantId": "m29abc123", "quantity": 2 }
 ```
 
-#### `remove_from_cart`
-Remove an item from the cart entirely.
+---
+
+### `update_cart_item`
+
+Update the quantity of an item already in the cart. Returns the updated cart.
+
+**Input:**
 ```json
-{ "cartId": "k17...", "variantId": "m29..." }
+{ "cartId": "k17def789", "variantId": "m29abc123", "quantity": 1 }
 ```
 
-### Checkout
+---
 
-#### `get_delivery_quote`
-Fare preview for a store + drop-off location. Call this before `place_guest_order` so the customer sees the total.
+### `remove_from_cart`
+
+Remove an item from the cart entirely. Returns the updated cart.
+
+**Input:**
+```json
+{ "cartId": "k17def789", "variantId": "m29abc123" }
+```
+
+---
+
+### `get_delivery_quote`
+
+Fare preview before checkout. Always call this so the customer sees the full cost.
+
+**Input:**
 ```json
 {
   "storeId": "n97bctqtnwn501xcvvqc0g1prn80g382",
   "lat": 0.3476,
   "lng": 32.5825,
-  "orderSubtotal": 15000,
+  "orderSubtotal": 20000,
   "isExpress": false
 }
 ```
 
-#### `place_guest_order`
-Place a cash-on-delivery order. Returns `{ orderId, displayId, total, rememberPhone }`. **Store `orderId` + `rememberPhone` on the conversation** — both are needed to check status later.
+**Output (delivery available):**
 ```json
 {
-  "cartId": "k17...",
-  "sessionId": "mcp_...",
+  "available": true,
+  "distanceKm": 1.84,
+  "storeName": "Farm Fresh",
+  "estimatedDeliveryTime": { "minMinutes": 18, "maxMinutes": 27 },
+  "fare": {
+    "baseFare": 2000,
+    "distanceFare": 1000,
+    "surgeFare": 0,
+    "smallOrderFee": 1500,
+    "expressFee": 0,
+    "heavyItemFee": 0,
+    "discount": 0,
+    "total": 4500,
+    "currency": "UGX",
+    "isFreeDelivery": false
+  }
+}
+```
+
+**Output (out of range):**
+```json
+{
+  "available": false,
+  "reason": "Delivery address is too far (17.2km). Maximum is 15km.",
+  "distanceKm": 17.2
+}
+```
+
+> Surge pricing applies at peak hours: morning rush 07–09 (1.3×), lunch 12–14 (1.2×), evening 17–20 (1.4×), late night 22–05 (1.5×). A small-order fee of UGX 1,500 is added for orders under UGX 15,000. Free delivery for orders over UGX 100,000.
+
+---
+
+### `place_guest_order`
+
+Place a cash-on-delivery order. **Store `orderId` and `rememberPhone` on the conversation** — both are needed for `check_order_status`.
+
+**Input:**
+```json
+{
+  "cartId": "k17def789",
+  "sessionId": "mcp_a1b2c3d4e5f6",
   "guestName": "Alice Nakato",
   "guestPhone": "0772123456",
   "deliveryLat": 0.3476,
@@ -194,20 +452,102 @@ Place a cash-on-delivery order. Returns `{ orderId, displayId, total, rememberPh
 }
 ```
 
-Phone numbers accept any Ugandan format — `0772123456`, `+256772123456`, `256 772 123 456` — and are normalised to E.164 (`+256772123456`) before hitting Convex. Non-UG or landline numbers are rejected.
-
-### Post-checkout
-
-#### `check_order_status`
-Phone-match authorization — returns `null` if the phone does not match the order.
+**Output:**
 ```json
-{ "orderId": "j01...", "phone": "+256772123456" }
+{
+  "orderId": "j01ghi012",
+  "displayId": 1042,
+  "total": 24500,
+  "itemCount": 2,
+  "rememberPhone": "+256772123456",
+  "paymentMethod": "cash_on_delivery"
+}
 ```
 
-#### `list_my_orders`
-Recent orders for a phone number.
+> Phone numbers accept any Ugandan format — `0772123456`, `+256772123456`, `256 772 123 456` — and are normalised to E.164 before hitting Convex. Non-UG or landline numbers are rejected.
+>
+> The cart is deleted after a successful order. Do not reuse `cartId`.
+
+---
+
+### `check_order_status`
+
+Phone-match authorization — returns `null` if the phone does not match the order.
+
+**Input:**
+```json
+{ "orderId": "j01ghi012", "phone": "+256772123456" }
+```
+
+**Output:**
+```json
+{
+  "_id": "j01ghi012",
+  "displayId": 1042,
+  "status": "confirmed",
+  "fulfillmentStatus": "in_progress",
+  "paymentStatus": "awaiting",
+  "paymentMethod": "cash_on_delivery",
+  "fulfillmentType": "delivery",
+  "currencyCode": "UGX",
+  "subtotal": 20000,
+  "deliveryTotal": 4500,
+  "total": 24500,
+  "guestName": "Alice Nakato",
+  "guestPhone": "+256772123456",
+  "deliveryLocation": {
+    "lat": 0.3476,
+    "lng": 32.5825,
+    "phone": "+256772123456",
+    "description": "Green gate next to KFC"
+  },
+  "riderName": "David Ssemakula",
+  "riderPhone": "0200923088",
+  "items": [
+    { "title": "Tilapia Fillet - 500g", "quantity": 2, "unitPrice": 10000, "subtotal": 20000 }
+  ],
+  "storeName": "Farm Fresh",
+  "createdAt": 1713990000000
+}
+```
+
+> `riderPhone` is always masked to the BoxKuBox support number.
+
+**Possible `status` values:** `pending` → `confirmed` → `completed` / `cancelled`
+
+**Possible `fulfillmentStatus` values:** `not_fulfilled` → `in_progress` → `fulfilled`
+
+---
+
+### `list_my_orders`
+
+Recent orders for a phone number, newest first.
+
+**Input:**
 ```json
 { "phone": "+256772123456", "limit": 10 }
+```
+
+**Output:**
+```json
+[
+  {
+    "_id": "j01ghi012",
+    "displayId": 1042,
+    "status": "confirmed",
+    "total": 24500,
+    "currencyCode": "UGX",
+    "createdAt": 1713990000000
+  },
+  {
+    "_id": "j00abc999",
+    "displayId": 1031,
+    "status": "completed",
+    "total": 18000,
+    "currencyCode": "UGX",
+    "createdAt": 1713800000000
+  }
+]
 ```
 
 ---
@@ -264,7 +604,7 @@ Image runs as the non-root `bun` user, exposes `3000/tcp`, and includes a health
 
 ### Hosting
 
-Any container platform works — Fly.io, Railway, Render, fly.io machines, a plain VPS behind Caddy. The server is stateless apart from in-memory session transports; no sticky sessions are required as long as each chat conversation talks to the same instance. Running a single instance is fine until traffic justifies more; if you scale out, ensure session affinity (hash on `Mcp-Session-Id`).
+Any container platform works — Fly.io, Railway, Render, a plain VPS behind Caddy. The server is stateless apart from in-memory session transports; no sticky sessions are required as long as each chat conversation talks to the same instance. If you scale out, ensure session affinity (hash on `Mcp-Session-Id`).
 
 ### TLS
 
