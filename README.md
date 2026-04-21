@@ -82,52 +82,93 @@ A separate **cart session** (different thing) is created via the `create_guest_c
 
 ---
 
+## IDs vs slugs
+
+All store-targeting parameters across every tool use **Convex document IDs** (e.g. `n97bctqtnwn501xcvvqc0g1prn80g382`), not human-readable slugs. The discovery tools (`list_nearby_stores`, `search_stores`) return these IDs in the response — pass them directly into downstream tools without any transformation.
+
+| Discovery tool | ID field to capture | Use it in |
+|---|---|---|
+| `list_nearby_stores` | `storeId` | `create_guest_cart`, `get_store`, `get_store_timings`, `get_delivery_quote` |
+| `search_stores` | `_id` | same as above |
+| `search_products` | `variantId` | `add_to_cart` |
+| `search_products` | `organizationId` | `create_guest_cart` (if product found first) |
+
+---
+
 ## Tool reference
 
 ### Discovery
 
 #### `list_nearby_stores`
-List active stores. Pair with `get_delivery_quote` to confirm coverage.
+List active stores within 15 km of the customer's location. Returns `storeId` (Convex document ID) for each store — pass it directly to cart/quote tools.
 ```json
 { "lat": 0.3476, "lng": 32.5825, "limit": 20 }
 ```
+Key response fields per store: `storeId`, `name`, `slug`, `isOpen`, `distanceMeters`, `estimatedMinMin`, `estimatedMaxMin`.
 
 #### `search_products`
-Typesense-backed product search with typo tolerance.
+Typesense-backed product search with typo tolerance. Returns `variantId` and `organizationId` per result.
 ```json
 { "query": "pizza", "limit": 10, "customerLat": 0.3476, "customerLng": 32.5825 }
 ```
 
 #### `search_stores`
-Typesense-backed store search by name.
+Typesense-backed store search by name. Returns `_id` (use as `storeId`) per result.
 ```json
 { "query": "Cafe Javas", "limit": 10 }
 ```
 
 #### `get_store`
-Full store details including delivery zones, categories, pricing rules.
+Full store details including delivery zones, categories, and pricing rules.
 ```json
-{ "organizationId": "j57..." }
+{ "storeId": "n97bctqtnwn501xcvvqc0g1prn80g382" }
+```
+
+#### `get_store_timings`
+Current open/closed status and full weekly schedule for a store.
+```json
+{ "storeId": "n97bctqtnwn501xcvvqc0g1prn80g382" }
 ```
 
 ### Cart
 
 #### `create_guest_cart`
-Create a new cart for a specific store. Returns `{ cartId, sessionId }`. **Keep the `sessionId` for the duration of the conversation.**
+Create a new cart for a specific store. Returns `{ cartId, sessionId, storeId, storeName }`. **Store both `cartId` and `sessionId` against the conversation — they are required for every subsequent cart and order call.**
 ```json
-{ "organizationId": "j57...", "currencyCode": "UGX" }
+{ "storeId": "n97bctqtnwn501xcvvqc0g1prn80g382", "currencyCode": "UGX" }
 ```
 
-#### `get_cart` / `add_to_cart` / `update_cart_item` / `remove_from_cart`
-Standard cart operations. All take `cartId`. Variant-level operations take `variantId`.
+#### `get_cart`
+Fetch the current state of a cart including all line items and totals.
+```json
+{ "cartId": "k17..." }
+```
+
+#### `add_to_cart`
+Add a product variant to a cart (or increment its quantity if already present). Use `variantId` from `search_products`.
+```json
+{ "cartId": "k17...", "variantId": "m29...", "quantity": 2 }
+```
+
+#### `update_cart_item`
+Update the quantity of an item already in the cart. Set `quantity` to `0` to remove.
+```json
+{ "cartId": "k17...", "variantId": "m29...", "quantity": 1 }
+```
+
+#### `remove_from_cart`
+Remove an item from the cart entirely.
+```json
+{ "cartId": "k17...", "variantId": "m29..." }
+```
 
 ### Checkout
 
 #### `get_delivery_quote`
-Fare preview for a specific store + drop-off location.
+Fare preview for a store + drop-off location. Call this before `place_guest_order` so the customer sees the total.
 ```json
 {
-  "organizationId": "j57...",
+  "storeId": "n97bctqtnwn501xcvvqc0g1prn80g382",
   "lat": 0.3476,
   "lng": 32.5825,
   "orderSubtotal": 15000,
@@ -158,7 +199,7 @@ Phone numbers accept any Ugandan format — `0772123456`, `+256772123456`, `256 
 ### Post-checkout
 
 #### `check_order_status`
-Phone-match authorization. Returns `null` if the phone does not match the order.
+Phone-match authorization — returns `null` if the phone does not match the order.
 ```json
 { "orderId": "j01...", "phone": "+256772123456" }
 ```
@@ -174,11 +215,11 @@ Recent orders for a phone number.
 ## Typical flow
 
 1. User shares their location with the bot (WhatsApp location message, Telegram location share).
-2. Bot calls `list_nearby_stores` with `{ lat, lng }`, picks the most relevant few and presents them to the user.
-3. User picks a store → bot calls `get_store` to show categories / popular items, or `search_products` scoped later.
-4. Bot calls `create_guest_cart` → stores `{ cartId, sessionId }` against the chat.
-5. User adds items → bot calls `add_to_cart` for each.
-6. Bot calls `get_delivery_quote` to show the total before checkout.
+2. Bot calls `list_nearby_stores` with `{ lat, lng }` → captures `storeId` from each result.
+3. User picks a store → bot calls `get_store` with `{ storeId }` to show categories / popular items, or calls `search_products` with the user's query.
+4. Bot calls `create_guest_cart` with `{ storeId }` → stores `{ cartId, sessionId }` against the chat.
+5. User adds items → bot calls `add_to_cart` with `variantId` from the search results.
+6. Bot calls `get_delivery_quote` with `{ storeId, lat, lng, orderSubtotal }` to show the total before checkout.
 7. Bot collects name + phone (and delivery description if any) from the user.
 8. Bot calls `place_guest_order` with the captured data and `source: "whatsapp"` or `"telegram"`. Stores the returned `orderId` + phone.
 9. (Optional) Bot polls `check_order_status` every ~30s while the order is active and pushes updates to the user.
@@ -260,6 +301,7 @@ No OTP is required for guest orders. The vendor's manual confirmation call (plac
 | Symptom | Likely cause |
 |---|---|
 | `401 Unauthorized` | Missing or wrong `Authorization` header |
+| `Store not found: <id>` | Store does not exist in this deployment, or its `isActive` flag is `false` — check the Convex dashboard |
 | `Invalid Uganda phone number` | Non-UG number or landline — only mobile `+2567XXXXXXXX` accepted |
 | `Cart does not belong to this session` | `sessionId` doesn't match the one returned by `create_guest_cart` |
 | `Delivery address is outside the 15km delivery zone` | Drop-off too far from store; offer a different store |
@@ -270,4 +312,3 @@ No OTP is required for guest orders. The vendor's manual confirmation call (plac
 ## License
 
 Internal BoxConv project — not for redistribution.
-# boxkuboxmcp

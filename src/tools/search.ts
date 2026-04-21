@@ -6,7 +6,7 @@ import { sanitize } from "../sanitize";
 export function registerSearchTools(server: McpServer) {
   server.tool(
     "list_nearby_stores",
-    "List active stores that can deliver to a location. Requires the customer's shared lat/lng from WhatsApp.",
+    "List active stores that can deliver to a location. Requires the customer's shared lat/lng from WhatsApp. Each result includes a `storeId` (Convex document ID) — use that as the `storeId` argument to `create_guest_cart`, `get_store`, `get_store_timings`, and `get_delivery_quote`.",
     {
       lat: z
         .number()
@@ -35,7 +35,7 @@ export function registerSearchTools(server: McpServer) {
           s.distanceMeters <= MAX_DELIVERY_KM * 1000
       );
       const top = inZone.slice(0, limit).map(({ _id, ...store }) => ({
-        identifier: store.slug,
+        storeId: _id,
         ...store,
       }));
       return {
@@ -48,7 +48,7 @@ export function registerSearchTools(server: McpServer) {
 
   server.tool(
     "search_products",
-    "Search products across all active vendors by name/description. Typesense-backed with typo tolerance.",
+    "Search products across all active vendors by name/description. Typesense-backed with typo tolerance. Each result includes `organizationId` (the store's Convex document ID) and `variantId` — use `variantId` with `add_to_cart`.",
     {
       query: z.string().min(1),
       limit: z.number().int().positive().max(50).default(20),
@@ -67,7 +67,7 @@ export function registerSearchTools(server: McpServer) {
 
   server.tool(
     "search_stores",
-    "Search stores by name. Typesense-backed.",
+    "Search stores by name. Typesense-backed. Each result includes `_id` (the store's Convex document ID) — use that as `storeId` with `create_guest_cart`, `get_store`, `get_store_timings`, and `get_delivery_quote`.",
     {
       query: z.string().min(1),
       limit: z.number().int().positive().max(50).default(20),
@@ -84,15 +84,17 @@ export function registerSearchTools(server: McpServer) {
 
   server.tool(
     "get_store",
-    "Get full details for a single store including delivery zones, categories, and pricing rules.",
+    "Get full details for a single store including delivery zones, categories, and pricing rules. Use the `storeId` returned by `list_nearby_stores` or `search_stores`.",
     {
-      identifier: z
+      storeId: z
         .string()
-        .describe("Store slug (e.g. 'hamma-supplies') or Convex document ID"),
+        .describe(
+          "Convex document ID of the store (from list_nearby_stores or search_stores)"
+        ),
     },
-    async ({ identifier }) => {
+    async ({ storeId }) => {
       const store = await convex.query(api.organizations.getStoreDetails, {
-        identifier,
+        id: storeId,
       });
       return {
         content: [
@@ -104,15 +106,17 @@ export function registerSearchTools(server: McpServer) {
 
   server.tool(
     "get_store_timings",
-    "Get the operating hours and current open/closed status for a store. Returns the full weekly schedule, whether the store is open right now, and what time it opens/closes today.",
+    "Get the operating hours and current open/closed status for a store. Returns the full weekly schedule, whether the store is open right now, and what time it opens/closes today. Use the `storeId` returned by `list_nearby_stores` or `search_stores`.",
     {
-      identifier: z
+      storeId: z
         .string()
-        .describe("Store slug (e.g. 'j-j-traders') or Convex document ID"),
+        .describe(
+          "Convex document ID of the store (from list_nearby_stores or search_stores)"
+        ),
     },
-    async ({ identifier }) => {
+    async ({ storeId }) => {
       const timings = await convex.query(api.organizations.getStoreTimings, {
-        identifier,
+        identifier: storeId,
       });
       return {
         content: [

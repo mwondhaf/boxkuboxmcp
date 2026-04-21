@@ -14,30 +14,21 @@ function phoneError(err: unknown): never {
 export function registerOrderTools(server: McpServer) {
   server.tool(
     "get_delivery_quote",
-    "Get a delivery fare quote for a specific store + customer location. Call before placing the order so the customer knows the total.",
+    "Get a delivery fare quote for a specific store + customer location. Call before placing the order so the customer knows the total. Use the `storeId` returned by `list_nearby_stores` or `search_stores`.",
     {
-      identifier: z
+      storeId: z
         .string()
         .describe(
-          "Store slug (e.g. 'madam-gs-house-of-party') or Convex document ID"
+          "Convex document ID of the store (from list_nearby_stores or search_stores)"
         ),
       lat: z.number().describe("Customer latitude"),
       lng: z.number().describe("Customer longitude"),
       orderSubtotal: z.number().int().min(0),
       isExpress: z.boolean().optional(),
     },
-    async ({ identifier, lat, lng, orderSubtotal, isExpress }) => {
-      const store = await convex.query(api.organizations.getStoreTimings, {
-        identifier,
-      });
-      if (!store) {
-        return {
-          content: [{ type: "text", text: `Store not found: ${identifier}` }],
-          isError: true,
-        };
-      }
+    async ({ storeId, lat, lng, orderSubtotal, isExpress }) => {
       const quote = await convex.query(api.guestOrders.getGuestDeliveryQuote, {
-        organizationId: store._id,
+        organizationId: storeId,
         lat,
         lng,
         orderSubtotal,

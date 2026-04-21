@@ -6,22 +6,22 @@ import { newSessionId } from "../session";
 export function registerCartTools(server: McpServer) {
   server.tool(
     "create_guest_cart",
-    "Create a new guest shopping cart for a specific store. Returns a sessionId that must be passed to every subsequent cart/order call during this conversation.",
+    "Create a new guest shopping cart for a specific store. Returns `{ cartId, sessionId, storeId, storeName }`. Keep `cartId` and `sessionId` for the duration of the conversation — both are required for every subsequent cart and order call.",
     {
-      identifier: z
+      storeId: z
         .string()
         .describe(
-          "Store slug (e.g. 'madam-gs-house-of-party') or Convex document ID"
+          "Convex document ID of the store (from list_nearby_stores or search_stores)"
         ),
       currencyCode: z.string().optional().default("UGX"),
     },
-    async ({ identifier, currencyCode }) => {
+    async ({ storeId, currencyCode }) => {
       const store = await convex.query(api.organizations.getStoreTimings, {
-        identifier,
+        identifier: storeId,
       });
       if (!store) {
         return {
-          content: [{ type: "text", text: `Store not found: ${identifier}` }],
+          content: [{ type: "text", text: `Store not found: ${storeId}` }],
           isError: true,
         };
       }
@@ -36,7 +36,7 @@ export function registerCartTools(server: McpServer) {
           {
             type: "text",
             text: JSON.stringify(
-              { cartId, sessionId, storeSlug: store.slug },
+              { cartId, sessionId, storeId: store._id, storeName: store.name },
               null,
               2
             ),
