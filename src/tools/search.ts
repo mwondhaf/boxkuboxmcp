@@ -27,12 +27,10 @@ export function registerSearchTools(server: McpServer) {
         api.organizations.listActiveWithStatus,
         { customerLat: lat, customerLng: lng }
       )) as StoreRow[];
-      // Mirror the 15km hard limit enforced by getGuestDeliveryQuote
-      const MAX_DELIVERY_KM = 15;
+      // Pre-filter to stores that report a distance (i.e. have a location).
+      // The authoritative zone + distance check happens in get_delivery_quote.
       const inZone = stores.filter(
-        (s) =>
-          s.distanceMeters !== undefined &&
-          s.distanceMeters <= MAX_DELIVERY_KM * 1000
+        (s) => s.distanceMeters !== undefined
       );
       const top = inZone.slice(0, limit).map(({ _id, ...store }) => ({
         storeId: _id,
