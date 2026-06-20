@@ -64,6 +64,31 @@ export function registerSearchTools(server: McpServer) {
   );
 
   server.tool(
+    "search_store_products",
+    "Search products within ONE specific store. Use this once a store/cart has been chosen so results all come from the same vendor (everything in a cart must be from one store). Each result includes a `variantId` — use it with `add_to_cart`.",
+    {
+      organizationId: z
+        .string()
+        .describe(
+          "Convex document ID of the store (the storeId from create_guest_cart / list_nearby_stores / search_stores)"
+        ),
+      query: z.string().min(2),
+      limit: z.number().int().positive().max(50).default(30),
+    },
+    async (args) => {
+      const results = await convex.action(
+        api.typesense.searchProductsInStore,
+        args
+      );
+      return {
+        content: [
+          { type: "text", text: JSON.stringify(sanitize(results), null, 2) },
+        ],
+      };
+    }
+  );
+
+  server.tool(
     "search_stores",
     "Search stores by name. Typesense-backed. Each result includes `_id` (the store's Convex document ID) — use that as `storeId` with `create_guest_cart`, `get_store`, `get_store_timings`, and `get_delivery_quote`.",
     {

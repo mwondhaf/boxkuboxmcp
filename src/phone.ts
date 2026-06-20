@@ -48,3 +48,15 @@ export function normalizeUgMobile(input: string): string {
 
   return phoneUtil.format(parsed, PhoneNumberFormat.E164);
 }
+
+/**
+ * Re-throw an InvalidPhoneError as a plain Error (so the MCP layer surfaces the
+ * user-facing message), and propagate anything else unchanged. The `never`
+ * return type lets callers write `phone = normalize(...) ?? phoneError(err)`.
+ */
+export function phoneError(err: unknown): never {
+  if (err instanceof InvalidPhoneError) {
+    throw new Error(err.message);
+  }
+  throw err;
+}

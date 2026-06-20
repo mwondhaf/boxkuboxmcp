@@ -1,15 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { api, convex } from "../convex";
-import { InvalidPhoneError, normalizeUgMobile } from "../phone";
+import { normalizeUgMobile, phoneError } from "../phone";
 import { sanitizeOrder } from "../sanitize";
-
-function phoneError(err: unknown): never {
-  if (err instanceof InvalidPhoneError) {
-    throw new Error(err.message);
-  }
-  throw err;
-}
 
 export function registerOrderTools(server: McpServer) {
   server.tool(
@@ -41,8 +34,37 @@ export function registerOrderTools(server: McpServer) {
   );
 
   server.tool(
+    "preview_order",
+    "Preview the FINAL cost of an order before placing it — subtotal, delivery fee, service fee, small-order fee, and grand total — and check it can actually be placed (`canPlace`). The total here is exactly what `place_guest_order` will charge, so quote this to the customer first. If `canPlace` is false, read `issues` (e.g. below minimum order, outside delivery zone, store busy, item unavailable) and resolve them before placing.",
+    {
+      cartId: z.string(),
+      sessionId: z.string().describe("sessionId from create_guest_cart"),
+      deliveryLat: z.number().describe("Customer latitude"),
+      deliveryLng: z.number().describe("Customer longitude"),
+      fulfillmentType: z.enum(["delivery", "pickup"]).default("delivery"),
+      isExpress: z.boolean().optional(),
+    },
+    async (args) => {
+      const summary = await convex.query(
+        api.guestOrders.getGuestCheckoutSummary,
+        {
+          cartId: args.cartId,
+          sessionId: args.sessionId,
+          deliveryLat: args.deliveryLat,
+          deliveryLng: args.deliveryLng,
+          fulfillmentType: args.fulfillmentType,
+          isExpress: args.isExpress,
+        }
+      );
+      return {
+        content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
+      };
+    }
+  );
+
+  server.tool(
     "place_guest_order",
-    "Place a cash-on-delivery guest order. Requires a cart with items, the sessionId from create_guest_cart, guest contact info, and a shared location (lat/lng from WhatsApp location share, Telegram location share, or equivalent).",
+    "Place a cash-on-delivery guest order. Call `preview_order` first and confirm the total with the customer. Requires a cart with items, the sessionId from create_guest_cart, guest contact info, and a shared location (lat/lng from WhatsApp location share, Telegram location share, or equivalent).",
     {
       cartId: z.string(),
       sessionId: z.string(),
@@ -188,6 +210,32 @@ export function registerOrderTools(server: McpServer) {
       });
       return {
         content: [{ type: "text", text: JSON.stringify(orders, null, 2) }],
+      };
+    }
+  );
+
+  server.tool(
+    "cancel_guest_order",
+    "Cancel a guest order. Requires both orderId and the phone used at checkout (the phone-match is the authorization). Only orders that are still `pending` can be cancelled — once a rider has picked it up the customer must call support.",
+    {
+      orderId: z.string(),
+      phone: z.string().describe("Phone used at checkout"),
+      reason: z.string().optional().describe("Why the customer is cancelling"),
+    },
+    async ({ orderId, phone, reason }) => {
+      let normalized: string;
+      try {
+        normalized = normalizeUgMobile(phone);
+      } catch (err) {
+        phoneError(err);
+      }
+      const result = await convex.mutation(api.guestOrders.cancelGuestOrder, {
+        orderId,
+        phone: normalized!,
+        reason,
+      });
+      return {
+        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
       };
     }
   );

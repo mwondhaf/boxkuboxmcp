@@ -42,6 +42,12 @@ COPY --from=prerelease /usr/src/app/src ./src
 COPY --from=prerelease /usr/src/app/package.json .
 COPY --from=prerelease /usr/src/app/tsconfig.json .
 
+# Required runtime env (validated at startup by src/config.ts — the container
+# exits non-zero if any is missing). Pass them with `docker run -e` / compose:
+#   CONVEX_URL          Convex deployment URL
+#   MCP_CLIENT_SECRET   shared Bearer secret for /mcp callers
+#   GOOGLE_API_KEY      Google Places + Geocoding key (must ALSO be set in Convex)
+# Optional: PORT (default 3000), ALLOWED_ORIGINS
 ENV NODE_ENV=production
 USER bun
 EXPOSE 3000/tcp

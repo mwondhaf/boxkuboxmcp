@@ -4,6 +4,7 @@ bun.lockb
 .env.local
 *.log
 dist/
+.DS_Store
 
 # Convex artifacts — this package does not host Convex functions. If you ever
 # see a `convex/` dir appear here, a `npx convex *` command was run from the
