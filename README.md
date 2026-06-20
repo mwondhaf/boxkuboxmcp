@@ -559,7 +559,7 @@ Remove an item from the cart entirely. Returns the updated cart.
 
 ### `get_delivery_quote`
 
-Fare preview before checkout. Always call this so the customer sees the full cost.
+Quick fare estimate from a known subtotal — includes delivery fee, **service fee, small-order fee, and the grand total**. For the authoritative total from the actual cart, prefer `preview_order`.
 
 **Input:**
 ```json
@@ -577,20 +577,17 @@ Fare preview before checkout. Always call this so the customer sees the full cos
 {
   "available": true,
   "distanceKm": 1.84,
-  "storeName": "Farm Fresh",
+  "deliveryFee": 4500,
+  "baseFee": 2000,
+  "distanceFee": 2500,
+  "serviceFeeTotal": 1000,
+  "smallOrderFeeTotal": 0,
+  "subtotal": 20000,
+  "total": 25500,
+  "zoneName": "Kampala Central",
   "estimatedDeliveryTime": { "minMinutes": 18, "maxMinutes": 27 },
-  "fare": {
-    "baseFare": 2000,
-    "distanceFare": 1000,
-    "surgeFare": 0,
-    "smallOrderFee": 1500,
-    "expressFee": 0,
-    "heavyItemFee": 0,
-    "discount": 0,
-    "total": 4500,
-    "currency": "UGX",
-    "isFreeDelivery": false
-  }
+  "storeName": "Farm Fresh",
+  "currency": "UGX"
 }
 ```
 

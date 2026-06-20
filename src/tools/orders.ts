@@ -7,7 +7,7 @@ import { sanitizeOrder } from "../sanitize";
 export function registerOrderTools(server: McpServer) {
   server.tool(
     "get_delivery_quote",
-    "Get a delivery fare quote for a specific store + customer location. Call before placing the order so the customer knows the total. Use the `storeId` returned by `list_nearby_stores` or `search_stores`.",
+    "Get a fare quote for a store + customer location: delivery fee, service fee, small-order fee, and the grand total for the given subtotal. A quick estimate from a known subtotal; for the authoritative checkout total from the actual cart, use `preview_order`. Use the `storeId` returned by `list_nearby_stores` or `search_stores`.",
     {
       storeId: z
         .string()
