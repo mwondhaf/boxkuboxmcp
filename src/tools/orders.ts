@@ -3,8 +3,9 @@ import { z } from "zod";
 import { api, convex } from "../convex";
 import { normalizeUgMobile, phoneError } from "../phone";
 import { sanitizeOrder } from "../sanitize";
+import { resolveCustomerPhone } from "../session";
 
-export function registerOrderTools(server: McpServer) {
+export function registerOrderTools(server: McpServer, boundPhone?: string) {
   server.tool(
     "get_delivery_quote",
     "Get a fare quote for a store + customer location: delivery fee, service fee, small-order fee, and the grand total for the given subtotal. A quick estimate from a known subtotal; for the authoritative checkout total from the actual cart, use `preview_order`. Use the `storeId` returned by `list_nearby_stores` or `search_stores`.",
@@ -71,8 +72,9 @@ export function registerOrderTools(server: McpServer) {
       guestName: z.string().min(1),
       guestPhone: z
         .string()
+        .optional()
         .describe(
-          "Ugandan mobile number, any format (will be normalized to E.164)"
+          "Ugandan mobile number, any format (will be normalized to E.164). Omit when the session is bound to a verified caller — any value passed is then ignored."
         ),
       deliveryLat: z
         .number()
@@ -103,10 +105,13 @@ export function registerOrderTools(server: McpServer) {
       let guestPhone: string;
       let deliveryPhone: string;
       try {
-        guestPhone = normalizeUgMobile(args.guestPhone);
-        deliveryPhone = normalizeUgMobile(
-          args.deliveryPhone ?? args.guestPhone
-        );
+        guestPhone = resolveCustomerPhone(boundPhone, args.guestPhone);
+        // Defaults to the number the order is actually placed under. A different
+        // one is fine here — it only tells the rider who to call, and grants no
+        // access to anybody's order history.
+        deliveryPhone = args.deliveryPhone
+          ? normalizeUgMobile(args.deliveryPhone)
+          : guestPhone;
       } catch (err) {
         phoneError(err);
       }
@@ -151,12 +156,17 @@ export function registerOrderTools(server: McpServer) {
     "Check the status of a previously placed guest order. Requires both orderId and the phone used at checkout — the phone-match is the authorization.",
     {
       orderId: z.string(),
-      phone: z.string(),
+      phone: z
+        .string()
+        .optional()
+        .describe(
+          "Phone used at checkout. Ignored if the session is bound to a verified number."
+        ),
     },
     async ({ orderId, phone }) => {
       let normalized: string;
       try {
-        normalized = normalizeUgMobile(phone);
+        normalized = resolveCustomerPhone(boundPhone, phone);
       } catch (err) {
         phoneError(err);
       }
@@ -192,15 +202,20 @@ export function registerOrderTools(server: McpServer) {
 
   server.tool(
     "list_my_orders",
-    "List recent guest orders placed from a phone number.",
+    "List recent guest orders placed from a phone number. When the session is bound to a verified caller this returns only that caller's orders — it cannot be used to read another number's history.",
     {
-      phone: z.string(),
+      phone: z
+        .string()
+        .optional()
+        .describe(
+          "Ignored if the session is bound to a verified number, which is then the only number readable."
+        ),
       limit: z.number().int().positive().max(50).default(10),
     },
     async ({ phone, limit }) => {
       let normalized: string;
       try {
-        normalized = normalizeUgMobile(phone);
+        normalized = resolveCustomerPhone(boundPhone, phone);
       } catch (err) {
         phoneError(err);
       }
@@ -219,13 +234,18 @@ export function registerOrderTools(server: McpServer) {
     "Cancel a guest order. Requires both orderId and the phone used at checkout (the phone-match is the authorization). Only orders that are still `pending` can be cancelled — once a rider has picked it up the customer must call support.",
     {
       orderId: z.string(),
-      phone: z.string().describe("Phone used at checkout"),
+      phone: z
+        .string()
+        .optional()
+        .describe(
+          "Phone used at checkout. Ignored if the session is bound to a verified number."
+        ),
       reason: z.string().optional().describe("Why the customer is cancelling"),
     },
     async ({ orderId, phone, reason }) => {
       let normalized: string;
       try {
-        normalized = normalizeUgMobile(phone);
+        normalized = resolveCustomerPhone(boundPhone, phone);
       } catch (err) {
         phoneError(err);
       }

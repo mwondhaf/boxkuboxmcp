@@ -20,6 +20,14 @@ export const config = {
   // shared secret only.
   clerkSecretKey: process.env.CLERK_SECRET_KEY,
   clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+  // Set on customer-facing deployments (an AI agent talking to the public).
+  // Phone-scoped tools then refuse to run unless the calling runtime has bound a
+  // verified phone to the session, instead of trusting a model-supplied number.
+  // Leave unset for operator deployments, where a human types the number.
+  // A getter, not a snapshot, so it is readable without re-importing the module.
+  get requireCustomerPhone(): boolean {
+    return process.env.MCP_REQUIRE_CUSTOMER_PHONE === "true";
+  },
   port: Number(process.env.PORT ?? 3000),
   allowedOrigins: (process.env.ALLOWED_ORIGINS ?? "")
     .split(",")

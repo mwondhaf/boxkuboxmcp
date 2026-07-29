@@ -18,14 +18,23 @@ Typical order journey:
    - Returning customer: reuse a savedLocation from lookup_customer.
 3. Pick a store: list_nearby_stores(lat,lng) for stores that deliver there, or search_stores(name). Check get_store_timings before promising delivery.
 4. create_guest_cart(storeId) — keep the returned cartId AND sessionId for the rest of the conversation.
-5. Add items. If the customer knows what they want: search_store_products(organizationId, query). If they want to browse: list_store_categories(organizationId) then list_category_products(organizationId, categoryId). Then add_to_cart(cartId, variantId, quantity). Adjust with update_cart_item / remove_from_cart. Review with get_cart.
+5. Add items. If the customer knows what they want: search_store_products(storeName, query). If they want to browse: list_store_categories(organizationId) then list_category_products(organizationId, categoryId). Then add_to_cart(cartId, variantId, quantity). Adjust with update_cart_item / remove_from_cart. Review with get_cart.
 6. preview_order(cartId, sessionId, deliveryLat, deliveryLng) — this returns the REAL grand total (subtotal + delivery + service fee + small-order fee) and canPlace. Quote that total to the customer; if canPlace is false, resolve the listed issues first.
 7. place_guest_order(cartId, sessionId, guestName, guestPhone, deliveryLat, deliveryLng, ...) — confirm details first. Returns a displayId; read it back and remind the customer to keep their phone for status checks. (You must send the confirmation message yourself — placing an order does not auto-notify the customer.)
 8. Later: check_order_status(orderId, phone), list_my_orders(phone), or cancel_guest_order(orderId, phone) while still pending.
 
 Notes: a cart can only contain items from one store. Phone numbers are Ugandan and are normalized automatically. Never invent prices, fees, or stock — always read them from tool results, and prefer preview_order over get_delivery_quote for the final total.`;
 
-export function createServer(): McpServer {
+// Appended when the session is bound to a verified caller, so the model does not
+// waste turns asking for a number it is not allowed to choose.
+const BOUND_PHONE_INSTRUCTIONS = `This conversation is already bound to the customer's verified phone number. Do NOT ask the customer for their phone number and do NOT pass one to lookup_customer, list_my_orders, check_order_status, cancel_guest_order or place_guest_order — they act on the verified number automatically. Start with lookup_customer() and no arguments. If a customer asks about an order belonging to a different number, tell them you can only access orders placed from their own number.`;
+
+/**
+ * @param boundPhone The phone number the calling runtime verified for this
+ * conversation, if any. When set, phone-scoped tools act on it alone and stop
+ * accepting a number from the model — see session.ts.
+ */
+export function createServer(boundPhone?: string): McpServer {
   const server = new McpServer(
     {
       name: "boxconv-mcp",
@@ -35,16 +44,18 @@ export function createServer(): McpServer {
       capabilities: {
         tools: {},
       },
-      instructions: INSTRUCTIONS,
+      instructions: boundPhone
+        ? `${INSTRUCTIONS}\n\n${BOUND_PHONE_INSTRUCTIONS}`
+        : INSTRUCTIONS,
     }
   );
 
-  registerCustomerTools(server);
+  registerCustomerTools(server, boundPhone);
   registerLocationTools(server);
   registerSearchTools(server);
   registerCatalogTools(server);
   registerCartTools(server);
-  registerOrderTools(server);
+  registerOrderTools(server, boundPhone);
 
   return server;
 }

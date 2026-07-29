@@ -15,6 +15,7 @@ import {
 } from "./clerk-auth";
 import { config } from "./config";
 import { createServer as createMcpServer } from "./server";
+import { CUSTOMER_PHONE_HEADER, readBoundPhone } from "./session";
 
 // Map MCP session ID → transport. Streamable HTTP allows one server process to
 // host many concurrent conversations.
@@ -30,7 +31,7 @@ function setCors(res: ServerResponse, origin: string | undefined): void {
   res.setHeader("Access-Control-Allow-Origin", allow);
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, Mcp-Session-Id, mcp-protocol-version"
+    "Content-Type, Authorization, Mcp-Session-Id, mcp-protocol-version, X-Customer-Phone"
   );
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
   res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
@@ -38,8 +39,8 @@ function setCors(res: ServerResponse, origin: string | undefined): void {
 
 /**
  * Caller auth: the shared secret (headless callers) or a Clerk OAuth token
- * (interactive MCP clients). Not end-user auth — guest identity is established
- * per-request via the phone passed to place_guest_order.
+ * (interactive MCP clients). Not end-user auth — the customer is identified by
+ * the phone bound to the session, or supplied by a human operator (session.ts).
  *
  * Returns true when the request may proceed; writes the 401 itself otherwise.
  * `resourcePath` is the endpoint being protected, which the WWW-Authenticate
@@ -150,7 +151,17 @@ async function handleMcp(
         transports.delete(transport.sessionId);
       }
     };
-    const mcp = createMcpServer();
+    let boundPhone: string | undefined;
+    try {
+      boundPhone = readBoundPhone(req);
+    } catch (err) {
+      res.statusCode = 400;
+      res.end(
+        `Invalid ${CUSTOMER_PHONE_HEADER} header: ${err instanceof Error ? err.message : String(err)}`
+      );
+      return;
+    }
+    const mcp = createMcpServer(boundPhone);
     await mcp.connect(transport);
   }
 
@@ -194,6 +205,17 @@ async function handleSseOpen(
     return;
   }
 
+  let boundPhone: string | undefined;
+  try {
+    boundPhone = readBoundPhone(req);
+  } catch (err) {
+    res.statusCode = 400;
+    res.end(
+      `Invalid ${CUSTOMER_PHONE_HEADER} header: ${err instanceof Error ? err.message : String(err)}`
+    );
+    return;
+  }
+
   const transport = new SSEServerTransport("/message", res);
   sseTransports.set(transport.sessionId, transport);
 
@@ -201,7 +223,7 @@ async function handleSseOpen(
     sseTransports.delete(transport.sessionId);
   };
 
-  const mcp = createMcpServer();
+  const mcp = createMcpServer(boundPhone);
   await mcp.connect(transport);
 }
 
