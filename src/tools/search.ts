@@ -67,10 +67,10 @@ export function registerSearchTools(server: McpServer) {
     "search_store_products",
     "Search products within ONE specific store. Use this once a store/cart has been chosen so results all come from the same vendor (everything in a cart must be from one store). Each result includes a `variantId` — use it with `add_to_cart`.",
     {
-      organizationId: z
+      storeName: z
         .string()
         .describe(
-          "Convex document ID of the store (the storeId from create_guest_cart / list_nearby_stores / search_stores)"
+          "Exact store name as returned by create_guest_cart (`storeName`), list_nearby_stores or search_stores (`name`)"
         ),
       query: z.string().min(2),
       limit: z.number().int().positive().max(50).default(30),
