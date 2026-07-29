@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@clerk/backend": "^3.14.0",
+    "@clerk/mcp-tools": "^0.6.0",
     "@modelcontextprotocol/sdk": "^1.0.4",
     "convex": "^1.17.0",
     "google-libphonenumber": "^3.2.40",

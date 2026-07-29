@@ -48,6 +48,9 @@ COPY --from=prerelease /usr/src/app/tsconfig.json .
 #   MCP_CLIENT_SECRET   shared Bearer secret for /mcp callers
 #   GOOGLE_API_KEY      Google Places + Geocoding key (must ALSO be set in Convex)
 # Optional: PORT (default 3000), ALLOWED_ORIGINS
+# Optional OAuth (set BOTH to let MCP clients sign in with Clerk instead of the
+# shared secret — use the PRODUCTION Clerk instance keys):
+#   CLERK_SECRET_KEY, CLERK_PUBLISHABLE_KEY
 ENV NODE_ENV=production
 USER bun
 EXPOSE 3000/tcp

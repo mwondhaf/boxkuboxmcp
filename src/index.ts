@@ -4,6 +4,15 @@ import { createServer as createHttpServer } from "node:http";
 // biome-ignore lint/style/useImportType: SSEServerTransport is instantiated with `new` below
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import type { AuthInfo } from "@modelcontextprotocol/sdk/server/auth/types.js";
+import { corsHeaders } from "@clerk/mcp-tools/server";
+import {
+  isOAuthMetadataPath,
+  oauthEnabled,
+  oauthMetadata,
+  protectedResourceUrl,
+  verifyOAuthToken,
+} from "./clerk-auth";
 import { config } from "./config";
 import { createServer as createMcpServer } from "./server";
 
@@ -25,6 +34,48 @@ function setCors(res: ServerResponse, origin: string | undefined): void {
   );
   res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE");
   res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+}
+
+/**
+ * Caller auth: the shared secret (headless callers) or a Clerk OAuth token
+ * (interactive MCP clients). Not end-user auth — guest identity is established
+ * per-request via the phone passed to place_guest_order.
+ *
+ * Returns true when the request may proceed; writes the 401 itself otherwise.
+ * `resourcePath` is the endpoint being protected, which the WWW-Authenticate
+ * challenge needs so the client knows which resource to get metadata for.
+ */
+async function authorize(
+  req: IncomingMessage,
+  res: ServerResponse,
+  resourcePath: string
+): Promise<boolean> {
+  const auth = req.headers.authorization;
+
+  if (auth === `Bearer ${config.clientSecret}`) {
+    return true;
+  }
+
+  const token = auth?.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
+  if (token && oauthEnabled) {
+    const authInfo = await verifyOAuthToken(req, token);
+    if (authInfo) {
+      // The transport reads AuthInfo off the request object, which is what
+      // makes the caller's identity available to tool handlers.
+      (req as IncomingMessage & { auth?: AuthInfo }).auth = authInfo;
+      return true;
+    }
+  }
+
+  res.statusCode = 401;
+  if (oauthEnabled) {
+    res.setHeader(
+      "WWW-Authenticate",
+      `Bearer resource_metadata="${protectedResourceUrl(req, resourcePath)}"`
+    );
+  }
+  res.end("Unauthorized");
+  return false;
 }
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
@@ -55,12 +106,7 @@ async function handleMcp(
     return;
   }
 
-  // Caller auth: shared secret. Not end-user auth — guest identity is
-  // established per-request via the phone passed to place_guest_order.
-  const auth = req.headers.authorization;
-  if (auth !== `Bearer ${config.clientSecret}`) {
-    res.statusCode = 401;
-    res.end("Unauthorized");
+  if (!(await authorize(req, res, "/mcp"))) {
     return;
   }
 
@@ -144,10 +190,7 @@ async function handleSseOpen(
   const origin = req.headers.origin;
   setCors(res, origin);
 
-  const auth = req.headers.authorization;
-  if (auth !== `Bearer ${config.clientSecret}`) {
-    res.statusCode = 401;
-    res.end("Unauthorized");
+  if (!(await authorize(req, res, "/sse"))) {
     return;
   }
 
@@ -176,10 +219,7 @@ async function handleSseMessage(
     return;
   }
 
-  const auth = req.headers.authorization;
-  if (auth !== `Bearer ${config.clientSecret}`) {
-    res.statusCode = 401;
-    res.end("Unauthorized");
+  if (!(await authorize(req, res, "/message"))) {
     return;
   }
 
@@ -219,6 +259,19 @@ const httpServer = createHttpServer(async (req, res) => {
       res.statusCode = 200;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("ok");
+      return;
+    }
+
+    // Public OAuth discovery documents. Unauthenticated by design — this is how
+    // a client learns where to send the user to sign in.
+    if (oauthEnabled && isOAuthMetadataPath(url.pathname)) {
+      const metadata = await oauthMetadata(req, url.pathname);
+      for (const [key, value] of Object.entries(corsHeaders)) {
+        res.setHeader(key, value);
+      }
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify(metadata));
       return;
     }
 
