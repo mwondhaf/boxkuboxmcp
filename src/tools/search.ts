@@ -1,6 +1,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { api, convex } from "../convex";
+import { assertConvexId, idErrorResult, REMEDY } from "../ids";
+import {
+  projectMany,
+  projectProduct,
+  projectStore,
+  projectTimings,
+  toolText,
+} from "../project";
 import { sanitize } from "../sanitize";
 
 export function registerSearchTools(server: McpServer) {
@@ -14,7 +22,7 @@ export function registerSearchTools(server: McpServer) {
       lng: z
         .number()
         .describe("Customer longitude (from shared WhatsApp location)"),
-      limit: z.number().int().positive().max(50).default(20),
+      limit: z.number().int().positive().max(20).default(8),
     },
     async ({ lat, lng, limit }) => {
       type StoreRow = {
@@ -38,7 +46,10 @@ export function registerSearchTools(server: McpServer) {
       }));
       return {
         content: [
-          { type: "text", text: JSON.stringify(sanitize(top), null, 2) },
+          {
+            type: "text",
+            text: toolText(projectMany(sanitize(top), projectStore)),
+          },
         ],
       };
     }
@@ -46,10 +57,10 @@ export function registerSearchTools(server: McpServer) {
 
   server.tool(
     "search_products",
-    "Search products across all active vendors by name/description. Typesense-backed with typo tolerance. Each result includes `organizationId` (the store's Convex document ID) and `variantId` — use `variantId` with `add_to_cart`.",
+    "Search products across all active vendors by name/description. Typesense-backed with typo tolerance. Each result includes `storeId` (the store's Convex document ID) and `variantId` — use `variantId` with `add_to_cart`, and `storeId` wherever a store or `organizationId` is asked for.",
     {
       query: z.string().min(1),
-      limit: z.number().int().positive().max(50).default(20),
+      limit: z.number().int().positive().max(20).default(8),
       customerLat: z.number().optional(),
       customerLng: z.number().optional(),
     },
@@ -57,7 +68,10 @@ export function registerSearchTools(server: McpServer) {
       const results = await convex.action(api.typesense.searchProducts, args);
       return {
         content: [
-          { type: "text", text: JSON.stringify(sanitize(results), null, 2) },
+          {
+            type: "text",
+            text: toolText(projectMany(sanitize(results), projectProduct)),
+          },
         ],
       };
     }
@@ -73,7 +87,7 @@ export function registerSearchTools(server: McpServer) {
           "Exact store name as returned by create_guest_cart (`storeName`), list_nearby_stores or search_stores (`name`)"
         ),
       query: z.string().min(2),
-      limit: z.number().int().positive().max(50).default(30),
+      limit: z.number().int().positive().max(20).default(10),
     },
     async (args) => {
       const results = await convex.action(
@@ -82,7 +96,10 @@ export function registerSearchTools(server: McpServer) {
       );
       return {
         content: [
-          { type: "text", text: JSON.stringify(sanitize(results), null, 2) },
+          {
+            type: "text",
+            text: toolText(projectMany(sanitize(results), projectProduct)),
+          },
         ],
       };
     }
@@ -90,16 +107,19 @@ export function registerSearchTools(server: McpServer) {
 
   server.tool(
     "search_stores",
-    "Search stores by name. Typesense-backed. Each result includes `_id` (the store's Convex document ID) — use that as `storeId` with `create_guest_cart`, `get_store`, `get_store_timings`, and `get_delivery_quote`.",
+    "Search stores by name. Typesense-backed. Each result includes `storeId` (the store's Convex document ID) — use it with `create_guest_cart`, `get_store`, `get_store_timings`, and `get_delivery_quote`, and wherever an `organizationId` is asked for.",
     {
       query: z.string().min(1),
-      limit: z.number().int().positive().max(50).default(20),
+      limit: z.number().int().positive().max(20).default(8),
     },
     async (args) => {
       const results = await convex.action(api.typesense.searchStores, args);
       return {
         content: [
-          { type: "text", text: JSON.stringify(sanitize(results), null, 2) },
+          {
+            type: "text",
+            text: toolText(projectMany(sanitize(results), projectStore)),
+          },
         ],
       };
     }
@@ -116,13 +136,16 @@ export function registerSearchTools(server: McpServer) {
         ),
     },
     async ({ storeId }) => {
+      try {
+        assertConvexId(storeId, "storeId", REMEDY.storeId);
+      } catch (err) {
+        return idErrorResult(err);
+      }
       const store = await convex.query(api.organizations.getStoreDetails, {
         id: storeId,
       });
       return {
-        content: [
-          { type: "text", text: JSON.stringify(sanitize(store), null, 2) },
-        ],
+        content: [{ type: "text", text: toolText(sanitize(store)) }],
       };
     }
   );
@@ -143,7 +166,12 @@ export function registerSearchTools(server: McpServer) {
       });
       return {
         content: [
-          { type: "text", text: JSON.stringify(sanitize(timings), null, 2) },
+          {
+            type: "text",
+            text: toolText(
+              projectTimings(sanitize(timings) as Record<string, unknown> | null)
+            ),
+          },
         ],
       };
     }

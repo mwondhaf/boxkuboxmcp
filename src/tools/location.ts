@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { api, convex } from "../convex";
+import { toolText } from "../project";
 
 export function registerLocationTools(server: McpServer) {
   server.tool(
@@ -25,7 +26,7 @@ export function registerLocationTools(server: McpServer) {
       });
       return {
         content: [
-          { type: "text", text: JSON.stringify(suggestions, null, 2) },
+          { type: "text", text: toolText(suggestions) },
         ],
       };
     }
@@ -55,7 +56,7 @@ export function registerLocationTools(server: McpServer) {
         };
       }
       return {
-        content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
+        content: [{ type: "text", text: toolText(details) }],
       };
     }
   );
@@ -83,7 +84,7 @@ export function registerLocationTools(server: McpServer) {
         };
       }
       return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        content: [{ type: "text", text: toolText(result) }],
       };
     }
   );

@@ -1,7 +1,9 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { api, convex } from "../convex";
+import { assertConvexId, idErrorResult, REMEDY } from "../ids";
 import { normalizeUgMobile, phoneError } from "../phone";
+import { toolText } from "../project";
 import { sanitizeOrder } from "../sanitize";
 import { resolveCustomerPhone } from "../session";
 
@@ -21,6 +23,11 @@ export function registerOrderTools(server: McpServer, boundPhone?: string) {
       isExpress: z.boolean().optional(),
     },
     async ({ storeId, lat, lng, orderSubtotal, isExpress }) => {
+      try {
+        assertConvexId(storeId, "storeId", REMEDY.storeId);
+      } catch (err) {
+        return idErrorResult(err);
+      }
       const quote = await convex.query(api.guestOrders.getGuestDeliveryQuote, {
         organizationId: storeId,
         lat,
@@ -29,7 +36,7 @@ export function registerOrderTools(server: McpServer, boundPhone?: string) {
         isExpress,
       });
       return {
-        content: [{ type: "text", text: JSON.stringify(quote, null, 2) }],
+        content: [{ type: "text", text: toolText(quote) }],
       };
     }
   );
@@ -46,6 +53,11 @@ export function registerOrderTools(server: McpServer, boundPhone?: string) {
       isExpress: z.boolean().optional(),
     },
     async (args) => {
+      try {
+        assertConvexId(args.cartId, "cartId", REMEDY.cartId);
+      } catch (err) {
+        return idErrorResult(err);
+      }
       const summary = await convex.query(
         api.guestOrders.getGuestCheckoutSummary,
         {
@@ -58,7 +70,7 @@ export function registerOrderTools(server: McpServer, boundPhone?: string) {
         }
       );
       return {
-        content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
+        content: [{ type: "text", text: toolText(summary) }],
       };
     }
   );
@@ -102,6 +114,11 @@ export function registerOrderTools(server: McpServer, boundPhone?: string) {
         ),
     },
     async (args) => {
+      try {
+        assertConvexId(args.cartId, "cartId", REMEDY.cartId);
+      } catch (err) {
+        return idErrorResult(err);
+      }
       let guestPhone: string;
       let deliveryPhone: string;
       try {
@@ -135,16 +152,12 @@ export function registerOrderTools(server: McpServer, boundPhone?: string) {
         content: [
           {
             type: "text",
-            text: JSON.stringify(
-              {
-                ...result,
-                // Remind the caller to store the phone — needed for future status checks.
-                rememberPhone: guestPhone,
-                paymentMethod: "cash_on_delivery",
-              },
-              null,
-              2
-            ),
+            text: toolText({
+              ...result,
+              // Remind the caller to store the phone — needed for future status checks.
+              rememberPhone: guestPhone,
+              paymentMethod: "cash_on_delivery",
+            }),
           },
         ],
       };
@@ -195,7 +208,7 @@ export function registerOrderTools(server: McpServer, boundPhone?: string) {
       }
 
       return {
-        content: [{ type: "text", text: JSON.stringify(masked, null, 2) }],
+        content: [{ type: "text", text: toolText(masked) }],
       };
     }
   );
@@ -210,7 +223,7 @@ export function registerOrderTools(server: McpServer, boundPhone?: string) {
         .describe(
           "Ignored if the session is bound to a verified number, which is then the only number readable."
         ),
-      limit: z.number().int().positive().max(50).default(10),
+      limit: z.number().int().positive().max(20).default(5),
     },
     async ({ phone, limit }) => {
       let normalized: string;
@@ -224,7 +237,7 @@ export function registerOrderTools(server: McpServer, boundPhone?: string) {
         limit,
       });
       return {
-        content: [{ type: "text", text: JSON.stringify(orders, null, 2) }],
+        content: [{ type: "text", text: toolText(orders) }],
       };
     }
   );
@@ -255,7 +268,7 @@ export function registerOrderTools(server: McpServer, boundPhone?: string) {
         reason,
       });
       return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+        content: [{ type: "text", text: toolText(result) }],
       };
     }
   );

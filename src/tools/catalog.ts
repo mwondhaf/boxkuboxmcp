@@ -1,6 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { api, convex } from "../convex";
+import { assertConvexId, idErrorResult, REMEDY } from "../ids";
+import {
+  projectCategory,
+  projectMany,
+  projectProduct,
+  toolText,
+} from "../project";
 import { sanitize } from "../sanitize";
 
 export function registerCatalogTools(server: McpServer) {
@@ -15,13 +22,21 @@ export function registerCatalogTools(server: McpServer) {
         ),
     },
     async ({ organizationId }) => {
+      try {
+        assertConvexId(organizationId, "organizationId", REMEDY.storeId);
+      } catch (err) {
+        return idErrorResult(err);
+      }
       const categories = await convex.query(
         api.guestCatalog.listStoreCategories,
         { organizationId }
       );
       return {
         content: [
-          { type: "text", text: JSON.stringify(sanitize(categories), null, 2) },
+          {
+            type: "text",
+            text: toolText(projectMany(sanitize(categories), projectCategory)),
+          },
         ],
       };
     }
@@ -38,16 +53,27 @@ export function registerCatalogTools(server: McpServer) {
         .string()
         .optional()
         .describe("Category to filter by (from list_store_categories)"),
-      limit: z.number().int().positive().max(100).default(30),
+      limit: z.number().int().positive().max(30).default(12),
     },
     async (args) => {
+      try {
+        assertConvexId(args.organizationId, "organizationId", REMEDY.storeId);
+        if (args.categoryId !== undefined) {
+          assertConvexId(args.categoryId, "categoryId", REMEDY.categoryId);
+        }
+      } catch (err) {
+        return idErrorResult(err);
+      }
       const products = await convex.query(
         api.guestCatalog.listStoreProducts,
         args
       );
       return {
         content: [
-          { type: "text", text: JSON.stringify(sanitize(products), null, 2) },
+          {
+            type: "text",
+            text: toolText(projectMany(sanitize(products), projectProduct)),
+          },
         ],
       };
     }

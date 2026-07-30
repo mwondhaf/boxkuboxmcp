@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { api, convex } from "../convex";
 import { phoneError } from "../phone";
+import { toolText } from "../project";
 import { sanitize } from "../sanitize";
 import { resolveCustomerPhone } from "../session";
 
@@ -38,10 +39,8 @@ export function registerCustomerTools(server: McpServer, boundPhone?: string) {
         content: [
           {
             type: "text",
-            text: JSON.stringify(
-              sanitize(profile, { preserve: PRESERVE_CUSTOMER_PHONES }),
-              null,
-              2
+            text: toolText(
+              sanitize(profile, { preserve: PRESERVE_CUSTOMER_PHONES })
             ),
           },
         ],
