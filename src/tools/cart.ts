@@ -3,6 +3,17 @@ import { z } from "zod";
 import { api, convex } from "../convex";
 import { newSessionId } from "../session";
 
+/**
+ * Callers were passing invented slugs ("onions-1kg") here, which the Convex
+ * mutation rejects with an opaque ArgumentValidationError. Spell out that this
+ * is an opaque ID copied verbatim from a catalog result.
+ */
+const variantIdSchema = z
+  .string()
+  .describe(
+    "Convex document ID of the product variant, copied exactly from the `variantId` field of a search_store_products / list_category_products result (looks like 'nd70037ferat6npd9wgekeg7s5883y4e'). Never a slug, product name, or guess — search for the product first if you don't have one."
+  );
+
 export function registerCartTools(server: McpServer) {
   server.tool(
     "create_guest_cart",
@@ -65,7 +76,7 @@ export function registerCartTools(server: McpServer) {
     "Add a product variant to a cart, or increment its quantity if already present.",
     {
       cartId: z.string(),
-      variantId: z.string(),
+      variantId: variantIdSchema,
       quantity: z.number().int().positive(),
     },
     async (args) => {
@@ -82,7 +93,7 @@ export function registerCartTools(server: McpServer) {
     "Update the quantity of an item already in the cart.",
     {
       cartId: z.string(),
-      variantId: z.string(),
+      variantId: variantIdSchema,
       quantity: z.number().int().min(0),
     },
     async (args) => {
@@ -99,7 +110,7 @@ export function registerCartTools(server: McpServer) {
     "Remove an item from the cart.",
     {
       cartId: z.string(),
-      variantId: z.string(),
+      variantId: variantIdSchema,
     },
     async (args) => {
       await convex.mutation(api.carts.removeItem, args);
